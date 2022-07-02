@@ -50,7 +50,7 @@ class Tools {
         const IPs = Tools
             .GET_NETWORK_INTERFACES()
             .filter(i => {
-                return i.family === "IPv4";
+                return i.family === "IPv4" || i.family === 4;
             })
             .map(i => {
                 return i.address;
