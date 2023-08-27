@@ -3,6 +3,7 @@
 const { Command } = require('commander');
 const path = require("path");
 const fs = require("fs");
+const http = require("http");
 const Tools = require("./utils/Tools");
 const express = require("express");
 const serveIndex = require("serve-index");
@@ -14,8 +15,8 @@ const program = new Command();
 program
     .name('valetudo-helper-httpbridge')
     .description('Utility Webserver')
-    .version('2022.04.0')
-    .option('-p, --port <port>', "webserver port (default: random)")
+    .version('2023.08.0')
+    .option('-p, --port <port>', "webserver port (default: 1337)")
     .option('-d, --directory <path>', "directory", "./www/")
 
 
@@ -23,7 +24,7 @@ program.parse();
 
 const options = program.opts();
 
-const port = parseInt(options.port) || 0;
+const port = parseInt(options.port) || undefined;
 const directory = path.resolve(options.directory);
 const uploadDir = path.join(directory, "./uploads/");
 
@@ -63,7 +64,12 @@ expressApp.post('/upload', upload.single('file'), function (req, res, next) {
 
 expressApp.use('/', express.static(directory), serveIndex(directory, {'icons': true}));
 
-const server = expressApp.listen(port, () => {
+const server = http.createServer(expressApp);
+const ports = port !== undefined ? [port] : [1337, 1338, 1339, 8080, 8888, 0];
+let portToUse;
+let infoTimeout;
+
+const onSuccessFullListen = () => {
     const IPs = Tools.GET_CURRENT_HOST_IPV4_ADDRESSES();
 
     console.log(""); //newline
@@ -81,4 +87,38 @@ const server = expressApp.listen(port, () => {
     });
 
     console.log("\n");
+}
+
+const tryListen = () => {
+    portToUse = ports.shift();
+    
+    if (portToUse !== undefined) {
+        server.listen(portToUse, () => {
+            if (infoTimeout) {
+                clearTimeout(infoTimeout);
+            }
+            
+            // This can't be right but apparently it is the correct way to do it if you want retry logic with different ports?
+            infoTimeout = setTimeout(() => {
+                onSuccessFullListen();
+            }, 500)
+        });
+    } else {
+        console.log("\nExiting..");
+        process.exit(1);
+    }
+}
+
+server.on("error", (err) => {
+    if (err.code === 'EADDRINUSE') {
+        if (ports.length === 0) {
+            console.log(`ERROR: Port ${portToUse} is already in use.`);
+        }
+        
+        tryListen();
+    } else {
+        console.error('An error occurred:', err);
+    }
 });
+
+tryListen();
